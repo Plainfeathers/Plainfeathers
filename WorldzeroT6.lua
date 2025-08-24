@@ -1,3 +1,13 @@
+-- WorldzeroT6.lua 开头
+local ALLOWED_KEY = "私人脚本"  
+if _G.mySecret ~= ALLOWED_KEY then
+    warn("无权访问")
+    return
+end
+
+-- 以下是原本的脚本逻辑...
+
+
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
