@@ -1,16 +1,137 @@
 
-pcall(function()
-    local args = { [1] = 43 }
-    local bossName = "BOSSKandrix"
-    local disappearThreshold = 12
-    local targetPlaceId = 15121292578
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
 
-    local function getStartRaidEvent()
-        return game:GetService("ReplicatedStorage"):FindFirstChild("Shared", true)
-            and game:GetService("ReplicatedStorage").Shared:FindFirstChild("Teleport", true)
-            and game:GetService("ReplicatedStorage").Shared.Teleport:FindFirstChild("StartRaid")
+local targetPlaceId = 15121292578
+local localPlayer = Players.LocalPlayer or Players.PlayerAdded:Wait()
+local sellItems = ReplicatedStorage:WaitForChild("Shared", 10):WaitForChild("Drops", 10):WaitForChild("SellItems", 10)
+
+local function waitForObject(getObjectFunc, timeout)
+    local start = tick()
+    while tick() - start < timeout do
+        local obj = getObjectFunc()
+        if obj then return obj end
+        task.wait(0.1)
     end
-    local startRaidEvent = getStartRaidEvent()
+    warn("超时未找到对象")
+    return nil
+end
+
+local character = waitForObject(function() return localPlayer.Character end, 20)
+local humanoidRootPart = waitForObject(function() return character:FindFirstChild("HumanoidRootPart") end, 20)
+local humanoid = waitForObject(function() return character:FindFirstChild("Humanoid") end, 20)
+local rootPart = humanoidRootPart
+
+local function isTargetPlace()
+    return game.PlaceId == targetPlaceId
+end
+
+local function processInventoryItems()
+    if not isTargetPlace() then return end
+    local inventory = waitForObject(function()
+        return localPlayer.PlayerGui:FindFirstChild("Profile")
+            and localPlayer.PlayerGui.Profile:FindFirstChild("Inventory")
+            and localPlayer.PlayerGui.Profile.Inventory:FindFirstChild("Items")
+    end, 10)
+    if not inventory then return end
+
+    for _, item in pairs(inventory:GetChildren()) do
+        if item.Name == "W10T5Staff" then
+            local perk3 = item:FindFirstChild("Perk3")
+            local isRetained = false
+            if perk3 and perk3.Value == "Vampiric" then
+                local perkValue = perk3:FindFirstChild("PerkValue")
+                if perkValue and perkValue.Value >= 0.15 then
+                    isRetained = true
+                end
+            end
+            if not isRetained then
+                pcall(function() sellItems:InvokeServer({item}) end)
+            end
+        end
+    end
+
+    for _, item in pairs(inventory:GetChildren()) do
+        if item.Name == "W10T5Armor" then
+            local perk3 = item:FindFirstChild("Perk3")
+            local isRetained = false
+            if perk3 then
+                local perkValue = perk3:FindFirstChild("PerkValue")
+                if perkValue then
+                    if (perk3.Value == "Glass" and perkValue.Value >= 1.0) or (perk3.Value == "Destruction" and perkValue.Value >= 0.5) then
+                        isRetained = true
+                    end
+                end
+            end
+            if not isRetained then
+                pcall(function() sellItems:InvokeServer({item}) end)
+            end
+        end
+    end
+
+    local t3t4Items = {"W10T3Staff", "W10T3Armor", "W10T4Staff", "W10T4Armor"}
+    for _, itemName in ipairs(t3t4Items) do
+        local item = inventory:FindFirstChild(itemName)
+        if item then
+            pcall(function() sellItems:InvokeServer({item}) end)
+        end
+    end
+end
+
+spawn(function()
+    while true do
+        if isTargetPlace() then
+            pcall(processInventoryItems)
+        end
+        task.wait(1)
+    end
+end)
+
+spawn(function()
+    while wait() do 
+        if not isTargetPlace() then continue end
+        
+        local function sellItem(itemName)
+            local itemPath = waitForObject(function()
+                return localPlayer.PlayerGui:FindFirstChild("Profile")
+                    and localPlayer.PlayerGui.Profile.Inventory
+                    and localPlayer.PlayerGui.Profile.Inventory.Items[itemName]
+            end, 3)
+            if itemPath then
+                pcall(function() sellItems:InvokeServer({itemPath}) end)
+            end
+        end
+
+        local coList = {
+            coroutine.create(function() sellItem("W9T5Spear") end),
+            coroutine.create(function() sellItem("W9T3Staff") end),
+            coroutine.create(function() sellItem("W9T4Armor") end),
+            coroutine.create(function() sellItem("W9T4Staff") end),
+            coroutine.create(function() sellItem("W9T5Armor") end),
+            coroutine.create(function() sellItem("W10T3Staff") end),
+            coroutine.create(function() sellItem("W10T3Armor") end),
+            coroutine.create(function() sellItem("W10T4Staff") end),
+            coroutine.create(function() sellItem("W10T4Armor") end)
+        }
+
+        for _, co in ipairs(coList) do
+            coroutine.resume(co)
+        end
+    end
+end)
+
+pcall(function()
+    local args = {[1] = 43}
+    local bossName = "BOSSKandrix"
+    local disappearThreshold = 16
+    local startRaidEvent = waitForObject(function()
+        return ReplicatedStorage:FindFirstChild("Shared", true)
+            and ReplicatedStorage.Shared:FindFirstChild("Teleport", true)
+            and ReplicatedStorage.Shared.Teleport:FindFirstChild("StartRaid")
+    end, 10)
 
     if not startRaidEvent or not startRaidEvent:IsA("RemoteEvent") then
         warn("StartRaid event not found")
@@ -22,152 +143,135 @@ pcall(function()
 
     spawn(function()
         while true do
-            local bossIsAlive = workspace:FindFirstChild("Mobs")
-                and workspace.Mobs:FindFirstChild(bossName)
-                and workspace.Mobs[bossName]:FindFirstChild("HealthProperties")
-                and workspace.Mobs[bossName].HealthProperties:FindFirstChild("Health")
-                and workspace.Mobs[bossName].HealthProperties.Health.Value > 0
-
-            if bossIsAlive then
-                lastBossExistTime = os.clock()
-                bossHasAppeared = true
+            if not isTargetPlace() then 
+                task.wait(0.5)
+                continue 
             end
+            
+            pcall(function()
+                local bossIsAlive = Workspace:FindFirstChild("Mobs")
+                    and Workspace.Mobs:FindFirstChild(bossName)
+                    and Workspace.Mobs[bossName]:FindFirstChild("HealthProperties")
+                    and Workspace.Mobs[bossName].HealthProperties:FindFirstChild("Health")
+                    and Workspace.Mobs[bossName].HealthProperties.Health.Value > 0
 
-            local currentTime = os.clock()
-            if bossHasAppeared and currentTime - lastBossExistTime >= disappearThreshold then
-                pcall(function()
-                    startRaidEvent:FireServer(unpack(args))
-                    print("BOSS appeared then disappeared, executing StartRaid")
-                end)
-                lastBossExistTime = currentTime
-            end
+                if bossIsAlive then
+                    lastBossExistTime = os.clock()
+                    bossHasAppeared = true
+                end
 
+                local currentTime = os.clock()
+                if bossHasAppeared and currentTime - lastBossExistTime >= disappearThreshold then
+                    pcall(function() startRaidEvent:FireServer(unpack(args)) end)
+                    lastBossExistTime = currentTime
+                    bossHasAppeared = false
+                end
+                task.wait(0.1)
+            end)
             task.wait(0.1)
         end
     end)
 
     spawn(function()
         while true do
-            if game.PlaceId ~= targetPlaceId then
-                pcall(function()
-                    startRaidEvent:FireServer(unpack(args))
-                    print("Non-target place detected, triggering rejoin (Place ID: " .. game.PlaceId .. ")")
-                end)
+            if not isTargetPlace() then
+                pcall(function() startRaidEvent:FireServer(unpack(args)) end)
             end
             task.wait(5)
         end
     end)
 
-    print("BOSS appearance-disappearance detection initiated (with non-target place rejoin)")
-end)
-
-local TARGET_PLACE_ID = 15121292578
-local function isTargetPlace()
-    return game.PlaceId == TARGET_PLACE_ID
-end
-
-if isTargetPlace() then
+    local noTargetThreshold = 30
+    local lastHasTargetTime = os.clock()
     spawn(function()
-        local targetBossNames = {"BOSSKandrix", "MiniBossCrystalWeaver"}
-        local processedBosses = {}
-        local shadowChains = nil
-
-        local function getShadowChainsEvent()
-            if not shadowChains then
-                shadowChains = game:GetService("ReplicatedStorage"):FindFirstChild("Shared", true)
-                    and game:GetService("ReplicatedStorage").Shared:FindFirstChild("Combat", true)
-                    and game:GetService("ReplicatedStorage").Shared.Combat:FindFirstChild("Skillsets", true)
-                    and game:GetService("ReplicatedStorage").Shared.Combat.Skillsets:FindFirstChild("MageOfShadows", true)
-                    and game:GetService("ReplicatedStorage").Shared.Combat.Skillsets.MageOfShadows:FindFirstChild("ShadowChains")
-            end
-            return shadowChains and shadowChains:IsA("RemoteEvent") and shadowChains or nil
-        end
-
-        pcall(function()
-            local model = game:GetService("ReplicatedStorage").Shared.Effects.Models:FindFirstChild("ShadowChain")
-            if model then
-                model:Destroy()
-                print("已删除模型：ShadowChain")
-            end
-        end)
-
         while true do
-            if not getShadowChainsEvent() then
+            if not isTargetPlace() then
                 task.wait(1)
                 continue
             end
 
-            local mobsFolder = workspace:FindFirstChild("Mobs")
-            if not mobsFolder then
-                task.wait(0.5)
-                continue
-            end
-
-            local currentBosses = {}
-            for _, child in ipairs(mobsFolder:GetChildren()) do
-                if child:IsA("Model") and table.find(targetBossNames, child.Name) then
-                    local health = child:FindFirstChild("HealthProperties")
-                        and child.HealthProperties:FindFirstChild("Health")
-                        and child.HealthProperties.Health.Value or 0
-                    if health > 0 then
-                        table.insert(currentBosses, child)
-                    end
-                end
-            end
-
-            local newBosses = {}
-            for _, boss in ipairs(currentBosses) do
-                if not table.find(processedBosses, boss) then
-                    table.insert(newBosses, boss)
-                    table.insert(processedBosses, boss)
-                end
-            end
-
-            if #newBosses > 0 then
-                local args = {[1] = {}}
-                local index = 1
-                local stackTimes = 200
-
-                for _, boss in ipairs(newBosses) do
-                    for i = 1, stackTimes do
-                        args[1][index] = boss
-                        index += 1
+            pcall(function()
+                local hasTarget = nil
+                if _G.character and rootPart then
+                    local mobsFolder = Workspace:FindFirstChild("Mobs")
+                    if mobsFolder then
+                        for _, mob in ipairs(mobsFolder:GetChildren()) do
+                            local collider = mob:FindFirstChild("Collider") or mob:FindFirstChildOfClass("BasePart")
+                            local healthProps = mob:FindFirstChild("HealthProperties")
+                            if collider and collider:IsA("BasePart") and healthProps then
+                                local health = healthProps:FindFirstChild("Health")
+                                local currentHealth = health and health.Value or 0
+                                if currentHealth > 0 then
+                                    hasTarget = true
+                                    break
+                                end
+                            end
+                        end
                     end
                 end
 
-                pcall(function()
-                    getShadowChainsEvent():FireServer(unpack(args))
-                    print("对新BOSS释放技能，数量：" .. #newBosses)
-                end)
-            end
-
-            for i = #processedBosses, 1, -1 do
-                local boss = processedBosses[i]
-                if not boss or not boss:IsDescendantOf(workspace) then
-                    table.remove(processedBosses, i)
+                if hasTarget then
+                    lastHasTargetTime = os.clock()
+                else
+                    local currentTime = os.clock()
+                    if currentTime - lastHasTargetTime >= noTargetThreshold then
+                        pcall(function() startRaidEvent:FireServer(unpack(args)) end)
+                        lastHasTargetTime = currentTime
+                    end
                 end
-            end
-
-            task.wait(0.2)
+            end)
+            task.wait(1)
         end
     end)
-end
+end)
 
 pcall(function()
-    local function getNearestTargetPos()
-        local playerPos = game.Players.LocalPlayer.Character
-            and game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            and game.Players.LocalPlayer.Character.HumanoidRootPart.Position
-            or Vector3.new(0, 5, 0)
+    local attackEvent
+    local function initAttackEvent()
+        local success, result = pcall(function()
+            return ReplicatedStorage:FindFirstChild("Shared", true)
+                :FindFirstChild("Combat", true)
+                :FindFirstChild("Attack")
+        end)
+        return success and result and result:IsA("RemoteEvent") and result or nil
+    end
 
-        local mobsFolder = workspace:FindFirstChild("Mobs")
+    local retryCount = 0
+    while not attackEvent and retryCount < 5 do
+        attackEvent = initAttackEvent()
+        retryCount += 1
+        if not attackEvent then task.wait(1) end
+    end
+
+    local function hasAliveTarget()
+        if not _G.character or not rootPart then return nil end
+        local mobsFolder = Workspace:FindFirstChild("Mobs")
+        if not mobsFolder then return nil end
+
+        for _, mob in ipairs(mobsFolder:GetChildren()) do
+            local collider = mob:FindFirstChild("Collider") or mob:FindFirstChildOfClass("BasePart")
+            local healthProps = mob:FindFirstChild("HealthProperties")
+            if not collider or not collider:IsA("BasePart") or not healthProps then continue end
+
+            local health = healthProps:FindFirstChild("Health")
+            local currentHealth = health and health.Value or 0
+            if currentHealth > 0 then
+                return true
+            end
+        end
+        return nil
+    end
+
+    local function getNearestTargetPos()
+        local playerPos = rootPart.Position
+        local mobsFolder = Workspace:FindFirstChild("Mobs")
         if not mobsFolder then return playerPos end
 
         local nearestCrystalPos, crystalDist = nil, math.huge
         local nearestMobPos, mobDist = nil, math.huge
 
         for _, mob in ipairs(mobsFolder:GetChildren()) do
-            local collider = mob:FindFirstChild("Collider")
+            local collider = mob:FindFirstChild("Collider") or mob:FindFirstChildOfClass("BasePart")
             local healthProps = mob:FindFirstChild("HealthProperties")
             if not collider or not collider:IsA("BasePart") or not healthProps then continue end
 
@@ -185,26 +289,14 @@ pcall(function()
         return nearestCrystalPos or nearestMobPos or playerPos
     end
 
-    local attackEvent
-    local function initAttackEvent()
-        local success, result = pcall(function()
-            return game:GetService("ReplicatedStorage"):FindFirstChild("Shared", true)
-                :FindFirstChild("Combat", true)
-                :FindFirstChild("Attack")
-        end)
-        return success and result and result:IsA("RemoteEvent") and result or nil
-    end
-
-    local retryCount = 0
-    while not attackEvent and retryCount < 5 do
-        attackEvent = initAttackEvent()
-        retryCount += 1
-        if not attackEvent then task.wait(1) end
-    end
     if attackEvent and isTargetPlace() then
         local function spawnSkillLoop(skillName, interval)
             spawn(function()
                 while true do
+                    if not isTargetPlace() or not hasAliveTarget() then
+                        task.wait(0.5)
+                        continue 
+                    end
                     pcall(function()
                         attackEvent:FireServer(skillName, getNearestTargetPos(), nil, 66)
                     end)
@@ -214,15 +306,15 @@ pcall(function()
         end
 
         local skills = {
-            {"MageOfShadows", 0.35},
-            {"MageOfShadowsBlast", 0.35},
-            {"MageOfShadowsCharged", 0.35},
-            {"MageOfShadowsBlastCharged", 0.35},
-            {"BighShadowOrb1", 0.35},
-            {"BighShadowOrb2", 0.35},
-            {"BighShadowOrb3", 0.35},
-            {"MageOfShadowsDamageCircle", 0.35},
-            {"Ultimate", 2}
+            {"MageOfShadows", 0.5},
+            {"MageOfShadowsBlast", 0.5},
+            {"MageOfShadowsCharged", 0.5},
+            {"MageOfShadowsBlastCharged", 0.5},
+            {"BighShadowOrb1", 0.5},
+            {"BighShadowOrb2", 0.5},
+            {"BighShadowOrb3", 0.5},
+            {"MageOfShadowsDamageCircle", 1},
+            {"Ultimate", 3}
         }
         for _, skillData in ipairs(skills) do
             spawnSkillLoop(skillData[1], skillData[2])
@@ -231,50 +323,84 @@ pcall(function()
 end)
 
 if isTargetPlace() then
-    local generalInterval = 0.01
-    local chestInterval = 0.1
-    local waveInterval = 1
-    local lastWaveSyncTime, lastChestSyncTime, lastMountCallTime = 0, 0, 0
-    local mountCooldown = 5
-    local isMobsActive = false
-    local cachedGoldChests, cachedSilverChests = {}, {}
+    local loopInterval = 0.1
+    spawn(function()
+        while task.wait(loopInterval) do
+            local player = game.Players.LocalPlayer
+            if not player then continue end
 
-    local function initChestCache()
-        local possibleContainers = {workspace, workspace:FindFirstChild("Chests"), workspace:FindFirstChild("MissionObjects")}
-        for _, container in ipairs(possibleContainers) do
-            if container then
-                for _, child in ipairs(container:GetChildren()) do
-                    if child.Name == "RaidChestGold" then
-                        table.insert(cachedGoldChests, child)
-                    elseif child.Name == "RaidChestSilver" then
-                        table.insert(cachedSilverChests, child)
+            local character = player.Character or player.CharacterAdded:Wait()
+            local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+            if not humanoidRootPart then
+                warn("未找到HumanoidRootPart，跳过本次循环")
+                continue
+            end
+            local targetCFrame = humanoidRootPart.CFrame
+
+            local coinsContainer = Workspace:FindFirstChild("Coins")
+            if coinsContainer then
+                for _, coin in ipairs(coinsContainer:GetChildren()) do
+                    if coin and coin.Parent == coinsContainer then
+                        local coinPart = coin:IsA("BasePart") and coin or coin:FindFirstChildOfClass("BasePart")
+                        if coinPart then
+                            coinPart.CanCollide = false
+                            coinPart.CFrame = targetCFrame
+                        end
+                    end
+                end
+            end
+
+            local goldChest = Workspace:FindFirstChild("RaidChestGold")
+            if goldChest then
+                local goldBase = goldChest:FindFirstChild("ChestBase")
+                if goldBase then
+                    local goldPart = goldBase:IsA("BasePart") and goldBase or goldBase:FindFirstChildOfClass("BasePart")
+                    if goldPart then
+                        goldPart.CanCollide = false
+                        goldPart.CFrame = targetCFrame
+                    end
+                else
+                    local goldPart = goldChest:IsA("BasePart") and goldChest or goldChest:FindFirstChildOfClass("BasePart")
+                    if goldPart then
+                        goldPart.CanCollide = false
+                        goldPart.CFrame = targetCFrame
+                    end
+                end
+            end
+
+            local silverChest = Workspace:FindFirstChild("RaidChestSilver")
+            if silverChest then
+                local silverBase = silverChest:FindFirstChild("ChestBase")
+                if silverBase then
+                    local silverPart = silverBase:IsA("BasePart") and silverBase or silverBase:FindFirstChildOfClass("BasePart")
+                    if silverPart then
+                        silverPart.CanCollide = false
+                        silverPart.CFrame = targetCFrame
+                    end
+                else
+                    local silverPart = silverChest:IsA("BasePart") and silverChest or silverChest:FindFirstChildOfClass("BasePart")
+                    if silverPart then
+                        silverPart.CanCollide = false
+                        silverPart.CFrame = targetCFrame
                     end
                 end
             end
         end
-    end
+    end)
+end
+
+if isTargetPlace() then
+    local generalInterval = 0.01
+    local waveInterval = 1
+    local lastWaveSyncTime = 0
+    local isMobsActive = false
 
     local function checkMobsStatus()
-        isMobsActive = workspace:FindFirstChild("Mobs") and #workspace.Mobs:GetChildren() > 0 or false
-    end
-
-    local function updateExistingChests(chestList, targetCFrame)
-        for i = #chestList, 1, -1 do
-            local chest = chestList[i]
-            if not chest or not chest.Parent then
-                table.remove(chestList, i)
-                continue
-            end
-            local part = chest:IsA("BasePart") and chest or chest:FindFirstChildOfClass("BasePart")
-            if part then
-                part.CanCollide = false
-                part.CFrame = targetCFrame
-            end
-        end
+        isMobsActive = Workspace:FindFirstChild("Mobs") and #Workspace.Mobs:GetChildren() > 0 or false
     end
 
     local function getSetMountedEvent()
-        local remotes = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes", true)
+        local remotes = ReplicatedStorage:FindFirstChild("Remotes", true)
         return remotes and remotes:FindFirstChild("SetMounted") or nil
     end
 
@@ -289,453 +415,805 @@ if isTargetPlace() then
         end
     end
 
-    initChestCache()
+    spawn(function()
+        while true do
+            executeMountLogic()
+            task.wait(5)
+        end
+    end)
+
+    local function teleportToWaveExit()
+        local character = localPlayer.Character
+        if not character then return warn("未找到玩家角色（WaveExit）！") end
+        local missionObjects = Workspace:FindFirstChild("MissionObjects")
+        if not missionObjects then return warn("MissionObjects 不存在（WaveExit）！") end
+        local waveExit = missionObjects:FindFirstChild("WaveExit")
+        if not waveExit then return warn("WaveExit 不存在！") end
+        local targetPart = waveExit:IsA("BasePart") and waveExit or waveExit:FindFirstChildOfClass("BasePart")
+        if targetPart then
+            local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+            if humanoidRootPart then
+                humanoidRootPart.CFrame = targetPart.CFrame
+            else
+                warn("未找到HumanoidRootPart（WaveExit）！")
+            end
+        else
+            warn("WaveExit 目标部件不存在！")
+        end
+    end
 
     spawn(function()
-        while task.wait(generalInterval) do
-            local currentTime = tick()
-            local player = game.Players.LocalPlayer
-            if not player then continue end
-
-            local character = player.Character
-            local humanoidRootPart = character and character:FindFirstChild("HumanoidRootPart")
-            if not humanoidRootPart then continue end
-            local targetCFrame = humanoidRootPart.CFrame
-
-            local coinsContainer = workspace:FindFirstChild("Coins")
-            if coinsContainer then
-                for _, coin in ipairs(coinsContainer:GetChildren()) do
-                    local coinPart = coin:IsA("BasePart") and coin or coin:FindFirstChildOfClass("BasePart")
-                    if coinPart then
-                        coinPart.CanCollide = false
-                        coinPart.CFrame = targetCFrame
-                    end
-                end
+        while wait(1) do
+            if not isTargetPlace() then continue end
+            local existingExit = Workspace.MissionObjects and Workspace.MissionObjects:FindFirstChild("WaveExit")
+            if existingExit then
+                teleportToWaveExit()
             end
+        end
+    end)
 
-            if currentTime - lastChestSyncTime >= chestInterval then
-                updateExistingChests(cachedGoldChests, targetCFrame)
-                updateExistingChests(cachedSilverChests, targetCFrame)
-                lastChestSyncTime = currentTime
-            end
-
-            local missionObjects = workspace:FindFirstChild("MissionObjects")
-            if missionObjects then
-                local missionStart = missionObjects:FindFirstChild("MissionStart")
-                if missionStart then
-                    local startPart = missionStart:IsA("BasePart") and missionStart or missionStart:FindFirstChildOfClass("BasePart")
-                    if startPart then
-                        startPart.CanCollide = false
-                        startPart.CFrame = targetCFrame
-                    end
+    spawn(function()
+        while true do
+            pcall(function()
+                local currentTime = tick()
+                local player = localPlayer
+                if not player then 
+                    task.wait(generalInterval)
+                    return 
                 end
 
-                local bossDoorTrigger = missionObjects:FindFirstChild("BossDoorTrigger")
-                if bossDoorTrigger then
-                    local doorPart = bossDoorTrigger:IsA("BasePart") and bossDoorTrigger or bossDoorTrigger:FindFirstChildOfClass("BasePart")
-                    if doorPart then
-                        doorPart.CanCollide = false
-                        doorPart.CFrame = targetCFrame
-                    end
+                local character = player.Character
+                local humanoidRootPart = character and character:FindFirstChild("HumanoidRootPart")
+                if not humanoidRootPart then 
+                    task.wait(generalInterval)
+                    return 
                 end
+                local targetCFrame = humanoidRootPart.CFrame
 
-                checkMobsStatus()
-                if currentTime - lastWaveSyncTime >= waveInterval then
-                    local waveExit = missionObjects:FindFirstChild("WaveExit")
-                    if waveExit then
-                        local exitPart = waveExit:IsA("BasePart") and waveExit or waveExit:FindFirstChildOfClass("BasePart")
-                        if exitPart then
-                            exitPart.CanCollide = false
-                            exitPart.CFrame = targetCFrame
+                local missionObjects = Workspace:FindFirstChild("MissionObjects")
+                if missionObjects then
+                    local missionStart = missionObjects:FindFirstChild("MissionStart")
+                    if missionStart then
+                        local startPart = missionStart:IsA("BasePart") and missionStart or missionStart:FindFirstChildOfClass("BasePart")
+                        if startPart then
+                            startPart.CanCollide = false
+                            startPart.CFrame = targetCFrame
                         end
-                        if currentTime - lastMountCallTime >= mountCooldown then
-                            executeMountLogic()
-                            lastMountCallTime = currentTime
+                    end
+
+                    local bossDoorTrigger = missionObjects:FindFirstChild("BossDoorTrigger")
+                    if bossDoorTrigger then
+                        local doorPart = bossDoorTrigger:IsA("BasePart") and bossDoorTrigger or bossDoorTrigger:FindFirstChildOfClass("BasePart")
+                        if doorPart then
+                            doorPart.CanCollide = false
+                            doorPart.CFrame = targetCFrame
                         end
-                    else
-                        if not isMobsActive then
-                            local nextFloorTele = missionObjects:FindFirstChild("NextFloorTeleporter")
-                            if nextFloorTele then
-                                local telePart = nextFloorTele:IsA("BasePart") and nextFloorTele or nextFloorTele:FindFirstChildOfClass("BasePart")
-                                if telePart then
-                                    telePart.CanCollide = false
-                                    telePart.CFrame = targetCFrame
-                                end
+                    end
+ 
+                    checkMobsStatus()
+                    if currentTime - lastWaveSyncTime >= waveInterval then
+                        local waveExit = missionObjects:FindFirstChild("WaveExit")
+                        if waveExit then
+                            local exitPart = waveExit:IsA("BasePart") and waveExit or waveExit:FindFirstChildOfClass("BasePart")
+                            if exitPart then
+                                exitPart.CanCollide = false
+                                exitPart.CFrame = targetCFrame
                             end
-                            local waveStarter = missionObjects:FindFirstChild("WaveStarter")
-                            if waveStarter then
-                                local wavePart = waveStarter:IsA("BasePart") and waveStarter or waveStarter:FindFirstChildOfClass("BasePart")
-                                if wavePart then
-                                    wavePart.CanCollide = false
-                                    wavePart.CFrame = targetCFrame
+                        else
+                            if not isMobsActive then
+                                local nextFloorTele = missionObjects:FindFirstChild("NextFloorTeleporter")
+                                if nextFloorTele then
+                                    local telePart = nextFloorTele:IsA("BasePart") and nextFloorTele or nextFloorTele:FindFirstChildOfClass("BasePart")
+                                    if telePart then
+                                        telePart.CanCollide = false
+                                        telePart.CFrame = targetCFrame
+                                    end
+                                end
+                                local waveStarter = missionObjects:FindFirstChild("WaveStarter")
+                                if waveStarter then
+                                    local wavePart = waveStarter:IsA("BasePart") and waveStarter or waveStarter:FindFirstChildOfClass("BasePart")
+                                    if wavePart then
+                                        wavePart.CanCollide = false
+                                        wavePart.CFrame = targetCFrame
+                                    end
                                 end
                             end
                         end
                     end
                     lastWaveSyncTime = currentTime
                 end
-            end
+            end)
+            task.wait(generalInterval)
+        end
+        task.wait(0.1)
+    end)
+end
+ 
+if isTargetPlace() then
+    spawn(function()
+        while true do
+            pcall(function()
+                local getPrizeEvent = ReplicatedStorage:FindFirstChild("Shared", true)
+                    and ReplicatedStorage.Shared:FindFirstChild("Missions", true)
+                    and ReplicatedStorage.Shared.Missions:FindFirstChild("GetMissionPrize")
+                if getPrizeEvent and getPrizeEvent:IsA("RemoteFunction") then
+                    getPrizeEvent:InvokeServer()
+                end
+            end)
+            task.wait(1)
         end
     end)
 end
-
-if isTargetPlace() then
-    local chestSync = {interval = 0.7, targetCFrame = CFrame.new(0, 5, 0)}
-
-    local function findAllChests(name)
-        local results = {}
-        local function search(parent)
-            for _, child in ipairs(parent:GetChildren()) do
-                if child.Name == name then table.insert(results, child) end
-                search(child)
-            end
-        end
-        search(workspace)
-        return results
-    end
-
-    local function syncChest(chest, targetCFrame)
-        if not chest or not chest.Parent then return false end
-        local basePart = chest:FindFirstChild("ChestBase")
-        local chestPart = basePart and (basePart:IsA("BasePart") and basePart or basePart:FindFirstChildOfClass("BasePart"))
-            or (chest:IsA("BasePart") and chest or chest:FindFirstChildOfClass("BasePart"))
-        if chestPart then
-            chestPart.CanCollide = false
-            chestPart.CFrame = targetCFrame
-            return true
-        end
-        return false
-    end
-
-    local function syncAllGoldChests(targetCFrame)
-        local goldChests = findAllChests("RaidChestGold")
-        local successCount = 0
-        for _, chest in ipairs(goldChests) do
-            if syncChest(chest, targetCFrame) then successCount += 1 end
-        end
-        return successCount
-    end
-
-    local function syncAllSilverChests(targetCFrame)
-        local silverChests = findAllChests("RaidChestSilver")
-        local successCount = 0
-        for _, chest in ipairs(silverChests) do
-            if syncChest(chest, targetCFrame) then successCount += 1 end
-        end
-        return successCount
-    end
-
-    spawn(function()
-        while task.wait(chestSync.interval) do
-            local player = game.Players.LocalPlayer
-if player and player.Character then
-local humanoidRootPart = player.Character:FindFirstChild("HumanoidRootPart")
-if humanoidRootPart then chestSync.targetCFrame = humanoidRootPart.CFrame end
-end
-syncAllGoldChests(chestSync.targetCFrame)
-syncAllSilverChests(chestSync.targetCFrame)
-end
-end)
-end
- 
-if isTargetPlace() then
-spawn(function()
-while wait() do
-pcall(function()
-game:GetService("ReplicatedStorage").Shared.Missions.GetMissionPrize:InvokeServer()
-end)
-end
-end)
-end
- 
-local player = game.Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local rootPart = character:WaitForChild("HumanoidRootPart")
-local humanoid = character:WaitForChild("Humanoid")
- 
-local targetPlaceId = 15121292578
  
 local textSphere = nil
 local specialMesh = nil
- 
-local displayText = player.Name .. " 牛逼"
+local displayText = localPlayer.Name .. " 牛逼"
  
 local function createSphere()
-if textSphere then return end
+    if textSphere or not isTargetPlace() then return end
+    local success = pcall(function()
+        textSphere = Instance.new("Part")
+        textSphere.Name = "PlayerIdSphere"
+        textSphere.Size = Vector3.new(20, 20, 20)
+        textSphere.Color = Color3.fromRGB(0, 0, 0)
+        textSphere.Material = Enum.Material.SmoothPlastic
+        textSphere.Anchored = false
+        textSphere.CanCollide = false
+        textSphere.Transparency = 0
+        textSphere.Parent = Workspace
  
-textSphere = Instance.new("Part")
-textSphere.Name = "PlayerIdSphere"
-textSphere.Size = Vector3.new(20, 20, 20)
-textSphere.Color = Color3.fromRGB(0, 0, 0)
-textSphere.Material = Enum.Material.SmoothPlastic
-textSphere.Anchored = false
-textSphere.CanCollide = false
-textSphere.Transparency = 0
-textSphere.Parent = workspace
+        specialMesh = Instance.new("SpecialMesh")
+        specialMesh.MeshType = Enum.MeshType.Sphere
+        specialMesh.Scale = Vector3.new(1, 1, 1)
+        specialMesh.Parent = textSphere
  
-specialMesh = Instance.new("SpecialMesh")
-specialMesh.MeshType = Enum.MeshType.Sphere
-specialMesh.Scale = Vector3.new(1, 1, 1)
-specialMesh.Parent = textSphere
+        local faces = {Enum.NormalId.Top, Enum.NormalId.Bottom, Enum.NormalId.Front, Enum.NormalId.Back, Enum.NormalId.Left, Enum.NormalId.Right}
+        for _, face in ipairs(faces) do
+            local surfaceGui = Instance.new("SurfaceGui")
+            surfaceGui.Adornee = textSphere
+            surfaceGui.Face = face
+            surfaceGui.Parent = textSphere
  
-local faces = {
-Enum.NormalId.Top,
-Enum.NormalId.Bottom,
-Enum.NormalId.Front,
-Enum.NormalId.Back,
-Enum.NormalId.Left,
-Enum.NormalId.Right
-}
+            local frame = Instance.new("Frame")
+            frame.Size = UDim2.new(1, 0, 1, 0)
+            frame.BackgroundTransparency = 1
+            frame.Parent = surfaceGui
  
-for _, face in ipairs(faces) do
-local surfaceGui = Instance.new("SurfaceGui")
-surfaceGui.Adornee = textSphere
-surfaceGui.Face = face
-surfaceGui.Parent = textSphere
- 
-local frame = Instance.new("Frame")
-frame.Size = UDim2.new(1, 0, 1, 0)
-frame.BackgroundTransparency = 1
-frame.Parent = surfaceGui
- 
-for i = 1, 5 do
-for j = 1, 5 do
-local textLabel = Instance.new("TextLabel")
-textLabel.Size = UDim2.new(0.2, 0, 0.2, 0)
-textLabel.Position = UDim2.new((i - 1) * 0.2, 0, (j - 1) * 0.2, 0)
-textLabel.BackgroundTransparency = 1
-textLabel.Text = displayText
-textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-textLabel.TextScaled = true
-textLabel.Font = Enum.Font.SourceSansBold
-textLabel.Parent = frame
-end
-end
-end
+            for i = 1, 5 do
+                for j = 1, 5 do
+                    local textLabel = Instance.new("TextLabel")
+                    textLabel.Size = UDim2.new(0.2, 0, 0.2, 0)
+                    textLabel.Position = UDim2.new((i - 1) * 0.2, 0, (j - 1) * 0.2, 0)
+                    textLabel.BackgroundTransparency = 1
+                    textLabel.Text = displayText
+                    textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    textLabel.TextScaled = true
+                    textLabel.Font = Enum.Font.SourceSansBold
+                    textLabel.Parent = frame
+                end
+            end
+        end
+    end)
+    if not success then
+        textSphere = nil
+        specialMesh = nil
+        task.wait(1)
+        createSphere()
+    end
 end
  
 local function destroySphere()
-if textSphere then
-textSphere:Destroy()
-textSphere = nil
-specialMesh = nil
-end
+    if textSphere then
+        pcall(function() textSphere:Destroy() end)
+        textSphere = nil
+        specialMesh = nil
+    end
 end
  
 local function onCharacterDied()
-destroySphere()
+    destroySphere()
 end
  
 local function onCharacterAdded(newCharacter)
-character = newCharacter
-rootPart = newCharacter:WaitForChild("HumanoidRootPart")
-humanoid = newCharacter:WaitForChild("Humanoid")
-humanoid.Died:Connect(onCharacterDied)
+    _G.character = newCharacter
+    rootPart = waitForObject(function() return newCharacter:FindFirstChild("HumanoidRootPart") end, 5)
+    humanoid = waitForObject(function() return newCharacter:FindFirstChild("Humanoid") end, 5)
+    if humanoid then
+        humanoid.Died:Connect(onCharacterDied)
+    end
+    task.wait(0.1)
+    if isTargetPlace() and rootPart and humanoid and humanoid.Health > 0 then
+        createSphere()
+    end
 end
  
-humanoid.Died:Connect(onCharacterDied)
-player.CharacterAdded:Connect(onCharacterAdded)
- 
-game:GetService("RunService").Heartbeat:Connect(function()
-if rootPart and humanoid and humanoid.Health > 0 then
-local currentPlaceId = game.PlaceId
- 
-if currentPlaceId == targetPlaceId then
-createSphere()
-if textSphere then
-textSphere.CFrame = rootPart.CFrame
+if humanoid then
+    humanoid.Died:Connect(onCharacterDied)
 end
-else
-destroySphere()
-end
-else
-destroySphere()
-end
-end)
+localPlayer.CharacterAdded:Connect(onCharacterAdded)
  
-spawn(function()
-while wait() do
-local function sellItem(itemName)
-local player = game:GetService("Players").LocalPlayer
-local itemPath = player.PlayerGui.Profile.Inventory.Items[itemName]
-game:GetService("ReplicatedStorage").Shared.Drops.SellItems:InvokeServer({itemPath})
-end
- 
-local co7 = coroutine.create(function() sellItem("W10T3Staff") end)
-local co8 = coroutine.create(function() sellItem("W10T3Armor") end)
-local co9 = coroutine.create(function() sellItem("W10T4Staff") end)
-local co10 = coroutine.create(function() sellItem("W10T4Armor") end)
- 
-coroutine.resume(co7)
-coroutine.resume(co8)
-coroutine.resume(co9)
-coroutine.resume(co10)
-end
+RunService.Heartbeat:Connect(function()
+    if not rootPart or not rootPart.Parent or not humanoid or humanoid.Health <= 0 or not isTargetPlace() then
+        destroySphere()
+        return
+    end
+    if isTargetPlace() then
+        createSphere()
+        if textSphere and textSphere.Parent ~= Workspace then
+            textSphere.Parent = Workspace
+        end
+        if textSphere then
+            textSphere.CFrame = rootPart.CFrame
+        end
+    else
+        destroySphere()
+    end
 end)
  
 if isTargetPlace() then
-local CONFIG = {
-ENABLED = true,
-CHECK_INTERVAL = 0.1,
-DISTANCE_THRESHOLD = 1.5,
-HEALTH_PATH = "HealthProperties.Health",
-SAFE_TELEPORT = true
-}
+    local CONFIG = {
+        ENABLED = true,
+        CHECK_INTERVAL = 0.1,
+        DISTANCE_THRESHOLD = 1.5,
+        HEALTH_PATH = "HealthProperties.Health",
+        SAFE_TELEPORT = true
+    }
+    local currentTarget = nil
+    local playerRoot = nil
+    local isRunning = true
  
-local currentTarget = nil
-local playerRoot = nil
-local isRunning = true
-local character = nil
+    local function initPlayer()
+        local plr = localPlayer
+        _G.character = plr.Character or plr.CharacterAdded:Wait()
+        playerRoot = waitForObject(function() return _G.character:FindFirstChild("HumanoidRootPart") end, 5)
+        plr.CharacterAdded:Connect(function(newChar)
+            _G.character = newChar
+            playerRoot = waitForObject(function() return newChar:FindFirstChild("HumanoidRootPart") end, 5)
+            currentTarget = nil
+        end)
+    end
  
-local function initPlayer()
-local plr = game.Players.LocalPlayer
-character = plr.Character or plr.CharacterAdded:Wait()
-playerRoot = character:WaitForChild("HumanoidRootPart", 5)
+    local function safeTeleport(targetPos)
+        if not _G.character or not playerRoot then return end
+        local humanoid = _G.character:FindFirstChildOfClass("Humanoid")
+        if humanoid then humanoid.PlatformStand = true end
+        task.defer(function() playerRoot.CFrame = CFrame.new(targetPos) end)
+        task.wait(0.05)
+        if humanoid then humanoid.PlatformStand = false end
+    end
  
-plr.CharacterAdded:Connect(function(newChar)
-character = newChar
-playerRoot = newChar:WaitForChild("HumanoidRootPart")
-currentTarget = nil
+    local function getTargetHealth(mob)
+        local pathParts = string.split(CONFIG.HEALTH_PATH, ".")
+        local current = mob
+        for _, part in ipairs(pathParts) do
+            current = current:FindFirstChild(part)
+            if not current then return 0 end
+        end
+        return (current:IsA("IntValue") or current:IsA("NumberValue")) and current.Value or 0
+    end
+ 
+    local function targetTeleportLoop()
+        while isRunning and CONFIG.ENABLED and isTargetPlace() do
+            pcall(function()
+                if not playerRoot then
+                    task.wait(CONFIG.CHECK_INTERVAL)
+                    return
+                end
+ 
+                local crystalSubTargets = {}
+                local normalTargets = {}
+                local mobsFolder = Workspace:FindFirstChild("Mobs")
+                if not mobsFolder then
+                    currentTarget = nil
+                    task.wait(CONFIG.CHECK_INTERVAL)
+                    return
+                end
+ 
+                for _, mob in ipairs(mobsFolder:GetChildren()) do
+                    local health = getTargetHealth(mob)
+                    if health <= 0 then continue end
+ 
+                    if mob.Name == "Crystal" then
+                        local subCrystal = mob:FindFirstChild("Crystal")
+                        if subCrystal and subCrystal:IsA("BasePart") then
+                            local distance = (subCrystal.Position - playerRoot.Position).Magnitude
+                            table.insert(crystalSubTargets, {collider = subCrystal, distance = distance})
+                        end
+                    end
+ 
+                    local collider = mob:FindFirstChild("Collider") or mob:FindFirstChildOfClass("BasePart")
+                    if collider and collider:IsA("BasePart") then
+                        local distance = (collider.Position - playerRoot.Position).Magnitude
+                        table.insert(normalTargets, {collider = collider, distance = distance})
+                    end
+                end
+ 
+                local targetList = #crystalSubTargets > 0 and crystalSubTargets or normalTargets
+                if #targetList == 0 then
+                    currentTarget = nil
+                    task.wait(CONFIG.CHECK_INTERVAL)
+                    return
+                end
+ 
+                table.sort(targetList, function(a, b) return a.distance < b.distance end)
+                local nearest = targetList[1]
+                if nearest.distance > CONFIG.DISTANCE_THRESHOLD then
+                    local targetPos = nearest.collider.Position
+                    if CONFIG.SAFE_TELEPORT then
+                        safeTeleport(targetPos)
+                    else
+                        playerRoot.CFrame = CFrame.new(targetPos)
+                    end
+                    currentTarget = nearest
+                end
+ 
+                task.wait(CONFIG.CHECK_INTERVAL)
+            end)
+            task.wait(0.1)
+        end
+    end
+ 
+    local function init()
+        initPlayer()
+        task.spawn(targetTeleportLoop)
+        UserInputService.InputBegan:Connect(function(input)
+            if input.KeyCode == Enum.KeyCode.P then
+                isRunning = not isRunning
+            end
+        end)
+    end
+ 
+    init()
+end
+ 
+if isTargetPlace() then
+    local camera = Workspace.Camera
+    if camera then
+        camera.ChildAdded:Connect(function(child)
+            pcall(function() child:Destroy() end)
+        end)
+        for _, existingChild in pairs(camera:GetChildren()) do
+            pcall(function() existingChild:Destroy() end)
+        end
+    end
+end
+ 
+local function fireShadowChainLogic()
+    local function clearShadowChainModel()
+        local shadowChainModel = waitForObject(function()
+            return ReplicatedStorage:FindFirstChild("Shared", true)
+                and ReplicatedStorage.Shared:FindFirstChild("Effects", true)
+                and ReplicatedStorage.Shared.Effects:FindFirstChild("Models", true)
+                and ReplicatedStorage.Shared.Effects.Models:FindFirstChild("ShadowChain")
+        end, 8)
+        if shadowChainModel then
+            pcall(function() shadowChainModel:Destroy() end)
+        end
+    end
+ 
+    local function getShadowChainsRemote()
+        return waitForObject(function()
+            local combatShared = ReplicatedStorage:FindFirstChild("Shared", true)
+                and ReplicatedStorage.Shared:FindFirstChild("Combat", true)
+            local mageSkillset = combatShared and combatShared:FindFirstChild("Skillsets", true)
+                and combatShared.Skillsets:FindFirstChild("MageOfShadows", true)
+            return mageSkillset and mageSkillset:FindFirstChild("ShadowChains") or nil
+        end, 10)
+    end
+ 
+    local function getAliveTargets()
+        local targets = {}
+        local mobsFolder = Workspace:FindFirstChild("Mobs")
+        if not mobsFolder then return targets end
+ 
+        for _, mobModel in ipairs(mobsFolder:GetChildren()) do
+            if mobModel:IsA("Model") then
+                local healthProp = mobModel:FindFirstChild("HealthProperties")
+                local healthValue = healthProp and healthProp:FindFirstChild("Health")
+                if healthValue and (healthValue:IsA("IntValue") or healthValue:IsA("NumberValue")) and healthValue.Value > 0 then
+                    table.insert(targets, mobModel)
+                end
+            end
+        end
+        return targets
+    end
+ 
+    local function startChainFireLoop()
+        local shadowChainsRemote = getShadowChainsRemote()
+        if not shadowChainsRemote or not shadowChainsRemote:IsA("RemoteEvent") then
+            return
+        end
+ 
+        while true do
+            if not isTargetPlace() then
+                task.wait(2)
+                continue
+            end
+ 
+            pcall(function()
+                local aliveTargets = getAliveTargets()
+                if #aliveTargets == 0 then
+                    task.wait(1)
+                    return
+                end
+ 
+                local chainArgs = {[1] = {}}
+                local targetIndex = 1
+                local stackPerTarget = 150
+ 
+                for _, target in ipairs(aliveTargets) do
+                    for i = 1, stackPerTarget do
+                        chainArgs[1][targetIndex] = target
+                        targetIndex += 1
+                    end
+                end
+ 
+                shadowChainsRemote:FireServer(unpack(chainArgs))
+                task.wait(3)
+            end)
+            task.wait(0.2)
+        end
+    end
+ 
+    clearShadowChainModel()
+    task.spawn(startChainFireLoop)
+end
+ 
+if isTargetPlace() then
+    fireShadowChainLogic()
+end
+
+local function getInventoryItems()
+    local playerGui = localPlayer:WaitForChild("PlayerGui", 15)
+    if not playerGui then warn("PlayerGui加载超时") return nil end
+    local profile = playerGui:WaitForChild("Profile", 10)
+    if not profile then warn("Profile UI未找到") return nil end
+    local inventory = profile:WaitForChild("Inventory", 10)
+    if not inventory then warn("Inventory未找到") return nil end
+    return inventory:WaitForChild("Items", 10)
+end
+
+local buyEggEvent = nil
+local hasExecutedDoubleBuy = false
+local lastIsEmpty = false
+local buyDelay = 0.3
+
+local function initBuyEggEvent()
+    buyEggEvent = ReplicatedStorage:FindFirstChild("Shared", true)
+        and ReplicatedStorage.Shared:FindFirstChild("Pets", true)
+        and ReplicatedStorage.Shared.Pets:FindFirstChild("BuyEgg", true)
+    if not buyEggEvent or not buyEggEvent:IsA("RemoteEvent") then
+        warn("BuyEgg事件未找到或类型错误！")
+        buyEggEvent = nil
+        return false
+    end
+    return true
+end
+
+local function isStarEggEmpty()
+    local inventoryItems = getInventoryItems()
+    if not inventoryItems then return true end
+    local starEgg = inventoryItems:FindFirstChild("StarEgg")
+    if not starEgg then return true end
+    local eggCount = starEgg:FindFirstChild("Count")
+    local countVal = eggCount and (eggCount:IsA("NumberValue") or eggCount:IsA("IntValue")) and eggCount.Value or 1
+    return countVal <= 0
+end
+
+local function executeDoubleBuy()
+    if not buyEggEvent then return end
+    local success1 = pcall(function() buyEggEvent:FireServer("StarEgg", "Gold") end)
+    task.wait(buyDelay)
+    local success2 = pcall(function() buyEggEvent:FireServer("StarEgg", "Gold") end)
+    hasExecutedDoubleBuy = true
+end
+
+local function buyEggLoop()
+    while not initBuyEggEvent() do
+        warn("BuyEgg初始化失败，5秒后重试")
+        task.wait(5)
+    end
+    local resetTimer = 0
+    while true do
+        local currentIsEmpty = isStarEggEmpty()
+        resetTimer = resetTimer + 0.05
+        if currentIsEmpty and not hasExecutedDoubleBuy then
+            if currentIsEmpty ~= lastIsEmpty or (currentIsEmpty and resetTimer >= 1) then
+                executeDoubleBuy()
+                resetTimer = 0
+            end
+        end
+        if not currentIsEmpty and hasExecutedDoubleBuy then
+            hasExecutedDoubleBuy = false
+        end
+        lastIsEmpty = currentIsEmpty
+        task.wait(0.05)
+    end
+end
+spawn(buyEggLoop)
+
+local function checkAndExecuteHatch()
+    local inventoryItems = getInventoryItems()
+    local starEgg = inventoryItems and inventoryItems:FindFirstChild("StarEgg")
+    local choose6Pet = ReplicatedStorage:FindFirstChild("PlayerEquips")
+        and ReplicatedStorage.PlayerEquips:FindFirstChild("choooooose6")
+        and ReplicatedStorage.PlayerEquips.choooooose6:FindFirstChild("Pet")
+    local equipEvent = ReplicatedStorage:FindFirstChild("Shared")
+        and ReplicatedStorage.Shared:FindFirstChild("Inventory")
+        and ReplicatedStorage.Shared.Inventory:FindFirstChild("EquipItem")
+    local hatchEvent = ReplicatedStorage:FindFirstChild("Shared")
+        and ReplicatedStorage.Shared:FindFirstChild("Pets")
+        and ReplicatedStorage.Shared.Pets:FindFirstChild("Hatch")
+    if not (starEgg and choose6Pet and equipEvent and hatchEvent) then return end
+    if not Workspace:FindFirstChild("HatchEffect") then
+        local equipSuccess = pcall(function() equipEvent:FireServer(starEgg, choose6Pet) end)
+        if not equipSuccess then pcall(function() equipEvent:FireServer(starEgg, choose6Pet) end) end
+        task.wait(0.1)
+        pcall(function() hatchEvent:FireServer(Vector3.new(318.65887451171875, 66.26661682128906, -1602.2010498046875)) end)
+    end
+end
+spawn(function()
+    while true do
+        checkAndExecuteHatch()
+        task.wait(6)
+    end
 end)
+
+local targetPetNames = {"BoarwolfPet", "FoxPet", "OwlPet"}
+local function checkAndSellAllTargetPets()
+    local inventoryItems = getInventoryItems()
+    if not (sellItems and inventoryItems and sellItems:IsA("RemoteFunction")) then return end
+    local allTargetPets = {}
+    for _, item in ipairs(inventoryItems:GetChildren()) do
+        for _, targetName in ipairs(targetPetNames) do
+            if item.Name == targetName then
+                table.insert(allTargetPets, item)
+                break
+            end
+        end
+    end
+    if #allTargetPets == 0 then return end
+    for idx, petItem in ipairs(allTargetPets) do
+        if not petItem:IsDescendantOf(inventoryItems) then continue end
+        local petName = petItem.Name
+        local petPerk3 = petItem:FindFirstChild("Perk3")
+        if not petPerk3 then
+            pcall(function() sellItems:InvokeServer({petItem}) end)
+            continue
+        end
+        if petPerk3.Value ~= "Vampiric" then
+            pcall(function() sellItems:InvokeServer({petItem}) end)
+            continue
+        end
+        local perkValue = petPerk3:FindFirstChild("PerkValue")
+        if not perkValue or not (perkValue:IsA("NumberValue") or perkValue:IsA("IntValue")) then
+            pcall(function() sellItems:InvokeServer({petItem}) end)
+            continue
+        end
+        local vampVal = perkValue.Value
+        if vampVal < 0.05 then
+            pcall(function() sellItems:InvokeServer({petItem}) end)
+        end
+    end
 end
- 
-local function safeTeleport(targetPos)
-if not character or not playerRoot then return end
- 
-local humanoid = character:FindFirstChildOfClass("Humanoid")
-if humanoid then
-humanoid.PlatformStand = true
-end
- 
-task.defer(function()
-playerRoot.CFrame = CFrame.new(targetPos)
+spawn(function()
+    while true do
+        checkAndSellAllTargetPets()
+        task.wait(0.5)
+    end
 end)
- 
-task.wait(0.05)
-if humanoid then
-humanoid.PlatformStand = false
+
+local function handlePlayerRespawn()
+    local function onCharacterLoad(newChar)
+        _G.character = newChar
+        rootPart = waitForObject(function() return newChar:FindFirstChild("HumanoidRootPart") end, 10)
+        humanoid = waitForObject(function() return newChar:FindFirstChild("Humanoid") end, 10)
+        if humanoid then
+            humanoid.Died:Connect(onCharacterDied)
+        end
+        if isTargetPlace() and rootPart then
+            task.wait(0.5)
+            local missionStart = Workspace:FindFirstChild("MissionObjects") and Workspace.MissionObjects:FindFirstChild("MissionStart")
+            local startPart = missionStart and (missionStart:IsA("BasePart") or missionStart:FindFirstChildOfClass("BasePart"))
+            if startPart then
+                rootPart.CFrame = startPart.CFrame
+            end
+            createSphere()
+        end
+    end
+    localPlayer.CharacterAdded:Connect(onCharacterLoad)
+    if localPlayer.Character then
+        onCharacterLoad(localPlayer.Character)
+    end
 end
+handlePlayerRespawn()
+
+local function autoCollectLoot()
+    while true do
+        if not isTargetPlace() or not rootPart then
+            task.wait(0.5)
+            continue
+        end
+        pcall(function()
+            local lootFolders = {Workspace:FindFirstChild("Loot"), Workspace:FindFirstChild("Drops")}
+            for _, folder in ipairs(lootFolders) do
+                if not folder then continue end
+                for _, loot in ipairs(folder:GetChildren()) do
+                    local lootPart = loot:IsA("BasePart") or loot:FindFirstChildOfClass("BasePart")
+                    if lootPart then
+                        lootPart.CanCollide = false
+                        lootPart.CFrame = rootPart.CFrame * CFrame.new(0, 1, 0)
+                    end
+                end
+            end
+        end)
+        task.wait(0.2)
+    end
 end
- 
-local function getTargetHealth(mob)
-local pathParts = string.split(CONFIG.HEALTH_PATH, ".")
-local current = mob
-for _, part in ipairs(pathParts) do
-current = current:FindFirstChild(part)
-if not current then return 0 end
+spawn(autoCollectLoot)
+
+local function autoAcceptQuest()
+    local acceptQuestEvent = ReplicatedStorage:FindFirstChild("Shared", true)
+        and ReplicatedStorage.Shared:FindFirstChild("Quests", true)
+        and ReplicatedStorage.Shared.Quests:FindFirstChild("AcceptQuest")
+    if not (acceptQuestEvent and acceptQuestEvent:IsA("RemoteEvent")) then return end
+    spawn(function()
+        while true do
+            if not isTargetPlace() then
+                task.wait(3)
+                continue
+            end
+            pcall(function()
+                local questGivers = Workspace:FindFirstChild("NPCs") and Workspace.NPCs:GetChildren()
+                if not questGivers then return end
+                for _, npc in ipairs(questGivers) do
+                    if npc:FindFirstChild("QuestData") then
+                        acceptQuestEvent:FireServer(npc.Name)
+                    end
+                end
+            end)
+            task.wait(10)
+        end
+    end)
 end
-return (current:IsA("IntValue") or current:IsA("NumberValue")) and current.Value or 0
+autoAcceptQuest()
+
+local function autoCompleteQuest()
+    local completeQuestEvent = ReplicatedStorage:FindFirstChild("Shared", true)
+        and ReplicatedStorage.Shared:FindFirstChild("Quests", true)
+        and ReplicatedStorage.Shared.Quests:FindFirstChild("CompleteQuest")
+    if not (completeQuestEvent and completeQuestEvent:IsA("RemoteEvent")) then return end
+    spawn(function()
+        while true do
+            if not isTargetPlace() then
+                task.wait(5)
+                continue
+            end
+            pcall(function()
+                completeQuestEvent:FireServer()
+            end)
+            task.wait(8)
+        end
+    end)
 end
- 
-local function targetTeleportLoop()
-while isRunning and CONFIG.ENABLED do
-local crystalSubTargets = {}
-local normalTargets = {}
-local mobsFolder = workspace:FindFirstChild("Mobs")
- 
-if not mobsFolder then
-currentTarget = nil
-task.wait(CONFIG.CHECK_INTERVAL)
-continue
+autoCompleteQuest()
+
+local function autoRepairEquipment()
+    local repairEvent = ReplicatedStorage:FindFirstChild("Shared", true)
+        and ReplicatedStorage.Shared:FindFirstChild("Inventory", true)
+        and ReplicatedStorage.Shared.Inventory:FindFirstChild("RepairEquipment")
+    if not (repairEvent and repairEvent:IsA("RemoteFunction")) then return end
+    spawn(function()
+        while true do
+            if not isTargetPlace() then
+                task.wait(60)
+                continue
+            end
+            pcall(function()
+                local inventoryItems = getInventoryItems()
+                if not inventoryItems then return end
+                local equipItems = {"W10T5Staff", "W10T5Armor"}
+                for _, itemName in ipairs(equipItems) do
+                    local item = inventoryItems:FindFirstChild(itemName)
+                    if item then
+                        local durability = item:FindFirstChild("Durability")
+                        local maxDurability = item:FindFirstChild("MaxDurability")
+                        if durability and maxDurability then
+                            local durVal = durability.Value
+                            local maxDurVal = maxDurability.Value
+                            if durVal < maxDurVal * 0.3 then
+                                repairEvent:InvokeServer(item)
+                            end
+                        end
+                    end
+                end
+            end)
+            task.wait(30)
+        end
+    end)
 end
- 
-for _, mob in ipairs(mobsFolder:GetChildren()) do
-local health = getTargetHealth(mob)
-if health <= 0 then continue end
- 
-if mob.Name == "Crystal" then
-local subCrystal = mob:FindFirstChild("Crystal")
-if subCrystal and subCrystal:IsA("BasePart") then
-local collider = subCrystal
-local distance = (collider.Position - playerRoot.Position).Magnitude
-table.insert(crystalSubTargets, {
-collider = collider,
-distance = distance
-})
+autoRepairEquipment()
+
+local function autoUsePotion()
+    local useItemEvent = ReplicatedStorage:FindFirstChild("Shared", true)
+        and ReplicatedStorage.Shared:FindFirstChild("Inventory", true)
+        and ReplicatedStorage.Shared.Inventory:FindFirstChild("UseItem")
+    if not (useItemEvent and useItemEvent:IsA("RemoteEvent")) then return end
+    spawn(function()
+        while true do
+            if not isTargetPlace() or not humanoid then
+                task.wait(1)
+                continue
+            end
+            pcall(function()
+                local healthPercent = humanoid.Health / humanoid.MaxHealth
+                local inventoryItems = getInventoryItems()
+                if not inventoryItems then return end
+                if healthPercent < 0.5 then
+                    local healthPotion = inventoryItems:FindFirstChild("HealthPotion")
+                    if healthPotion then
+                        useItemEvent:FireServer(healthPotion)
+                    end
+                end
+                local mana = humanoid:FindFirstChild("Mana")
+                local maxMana = humanoid:FindFirstChild("MaxMana")
+                if mana and maxMana then
+                    local manaPercent = mana.Value / maxMana.Value
+                    if manaPercent < 0.3 then
+                        local manaPotion = inventoryItems:FindFirstChild("ManaPotion")
+                        if manaPotion then
+                            useItemEvent:FireServer(manaPotion)
+                        end
+                    end
+                end
+            end)
+            task.wait(2)
+        end
+    end)
 end
+autoUsePotion()
+
+local function resetWaveExitState()
+    while true do
+        if not isTargetPlace() then
+            task.wait(2)
+            continue
+        end
+        pcall(function()
+            local missionObjects = Workspace:FindFirstChild("MissionObjects")
+            if not missionObjects then return end
+            local waveExit = missionObjects:FindFirstChild("WaveExit")
+            if not waveExit then return end
+            local exitPart = waveExit:IsA("BasePart") and waveExit or waveExit:FindFirstChildOfClass("BasePart")
+            if exitPart then
+                exitPart.CanCollide = true
+                local originalCFrame = exitPart:FindFirstChild("OriginalCFrame")
+                if originalCFrame and originalCFrame:IsA("CFrameValue") then
+                    exitPart.CFrame = originalCFrame.Value
+                end
+            end
+        end)
+        task.wait(10)
+    end
 end
- 
-local collider = mob:FindFirstChild("Collider") or mob:FindFirstChildOfClass("BasePart")
-if collider and collider:IsA("BasePart") then
-local distance = (collider.Position - playerRoot.Position).Magnitude
-table.insert(normalTargets, {
-collider = collider,
-distance = distance
-})
+spawn(resetWaveExitState)
+
+local function initWaveExitOriginalPos()
+    if not isTargetPlace() then return end
+    pcall(function()
+        local missionObjects = Workspace:FindFirstChild("MissionObjects")
+        if not missionObjects then return end
+        local waveExit = missionObjects:FindFirstChild("WaveExit")
+        if not waveExit then return end
+        local exitPart = waveExit:IsA("BasePart") and waveExit or waveExit:FindFirstChildOfClass("BasePart")
+        if exitPart and not exitPart:FindFirstChild("OriginalCFrame") then
+            local cframeVal = Instance.new("CFrameValue")
+            cframeVal.Name = "OriginalCFrame"
+            cframeVal.Value = exitPart.CFrame
+            cframeVal.Parent = exitPart
+        end
+    end)
 end
-end
- 
-local targetList = #crystalSubTargets > 0 and crystalSubTargets or normalTargets
- 
-if #targetList == 0 then
-currentTarget = nil
-task.wait(CONFIG.CHECK_INTERVAL)
-continue
-end
- 
-table.sort(targetList, function(a, b) return a.distance < b.distance end)
-local nearest = targetList[1]
- 
-if nearest.distance > CONFIG.DISTANCE_THRESHOLD then
-local targetPos = nearest.collider.Position
-if CONFIG.SAFE_TELEPORT then
-safeTeleport(targetPos)
-else
-playerRoot.CFrame = CFrame.new(targetPos)
-end
-currentTarget = nearest
-end
- 
-task.wait(CONFIG.CHECK_INTERVAL)
-end
-end
- 
-local function init()
-initPlayer()
-task.spawn(targetTeleportLoop)
- 
-game:GetService("UserInputService").InputBegan:Connect(function(input)
-if input.KeyCode == Enum.KeyCode.P then
-isRunning = false
-end
-end)
-end
- 
-init()
-end
- 
-local replicatedStorage = game:GetService("ReplicatedStorage")
-local sellItems = replicatedStorage.Shared.Drops.SellItems
-local players = game:GetService("Players")
-local localPlayer = players.LocalPlayer
-local inventory = localPlayer.PlayerGui.Profile.Inventory.Items
- 
-for _, item in pairs(inventory:GetChildren()) do
-if item.Name == "W10T5Staff" then
-if item and item.Perk3 then
-if item.Perk3.Value == "Vampiric" and item.Perk3.PerkValue and item.Perk3.PerkValue.Value >= 0.15 then
-print("W10T5Staff 保留（Vampiric值达标）")
-else
-sellItems:InvokeServer({item})
-print("W10T5Staff 出售（Vampiric不达标或无此属性）")
-end
-else
-sellItems:InvokeServer({item})
-print("W10T5Staff 出售（物品或Perk3缺失）")
-end
-elseif item.Name == "W10T5Armor" then
-if item and item.Perk3 then
-local isSelfValid = item.Perk3.Value == "Self Destruct" and item.Perk3.PerkValue and item.Perk3.PerkValue.Value >= 0.5
-local isGlassValid = item.Perk3.Value == "Glass" and item.Perk3.PerkValue and item.Perk3.PerkValue.Value >= 1.0
-if isSelfValid or isGlassValid then
-print("W10T5Armor 保留（Self Destruct/Glass值达标）")
-else
-sellItems:InvokeServer({item})
-print("W10T5Armor 出售（属性不达标或无目标属性）")
-end
-else
-sellItems:InvokeServer({item})
-print("W10T5Armor 出售（物品或Perk3缺失）")
-end
-end
-end
+initWaveExitOriginalPos()
+localPlayer.CharacterAdded:Connect(initWaveExitOriginalPos)
+
