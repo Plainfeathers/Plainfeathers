@@ -319,14 +319,14 @@ pcall(function()
         end
 
         local skills = {
-            {"MageOfShadows", 0.6},
-            {"MageOfShadowsBlast", 0.6},
-            {"MageOfShadowsCharged", 0.6},
-            {"MageOfShadowsBlastCharged", 0.6},
-            {"BighShadowOrb1", 0.6},
-            {"BighShadowOrb2", 0.6},
-            {"BighShadowOrb3", 0.6},
-            {"MageOfShadowsDamageCircle", 0.6},
+            {"MageOfShadows", 0.65},
+            {"MageOfShadowsBlast", 0.65},
+            {"MageOfShadowsCharged", 0.65},
+            {"MageOfShadowsBlastCharged", 0.65},
+            {"BighShadowOrb1", 0.65},
+            {"BighShadowOrb2", 0.65},
+            {"BighShadowOrb3", 0.65},
+            {"MageOfShadowsDamageCircle", 0.65},
             {"Ultimate", 3}
         }
         for _, skillData in ipairs(skills) do
