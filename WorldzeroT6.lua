@@ -16,6 +16,10 @@ local targetPlaceId = 15121292578
 local localPlayer = Players.LocalPlayer or Players.PlayerAdded:Wait()
 local sellItems = ReplicatedStorage:WaitForChild("Shared", 10):WaitForChild("Drops", 10):WaitForChild("SellItems", 10)
 
+local missionObjects = nil
+local waveExit = nil
+local isTeleportLoopRunning = false
+
 local function waitForObject(getObjectFunc, timeout)
     local start = tick()
     while tick() - start < timeout do
@@ -27,7 +31,8 @@ local function waitForObject(getObjectFunc, timeout)
     return nil
 end
 
-local character = waitForObject(function() return localPlayer.Character end, 20)
+-- 修复：角色加载容错，避免初始加载失败导致后续变量为空
+local character = waitForObject(function() return localPlayer.Character end, 20) or localPlayer.CharacterAdded:Wait()
 local humanoidRootPart = waitForObject(function() return character:FindFirstChild("HumanoidRootPart") end, 20)
 local humanoid = waitForObject(function() return character:FindFirstChild("Humanoid") end, 20)
 local rootPart = humanoidRootPart
@@ -270,6 +275,7 @@ pcall(function()
     end
 
     local function getNearestTargetPos()
+        if not rootPart then return Vector3.new(0,0,0) end -- 修复：避免rootPart为空导致报错
         local playerPos = rootPart.Position
         local mobsFolder = Workspace:FindFirstChild("Mobs")
         if not mobsFolder then return playerPos end
@@ -429,56 +435,75 @@ if isTargetPlace() then
         end
     end)
 
-    local function teleportToWaveExit()
-        local character = localPlayer.Character
-        if not character then return warn("未找到玩家角色（WaveExit）！") end
-        local missionObjects = Workspace:FindFirstChild("MissionObjects")
-        if not missionObjects then return warn("MissionObjects 不存在（WaveExit）！") end
-        local waveExit = missionObjects:FindFirstChild("WaveExit")
-        if not waveExit then return warn("WaveExit 不存在！") end
-        local targetPart = waveExit:IsA("BasePart") and waveExit or waveExit:FindFirstChildOfClass("BasePart")
-        if targetPart then
-            local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-            if humanoidRootPart then
-                humanoidRootPart.CFrame = targetPart.CFrame
-            else
-                warn("未找到HumanoidRootPart（WaveExit）！")
-            end
-        else
-            warn("WaveExit 目标部件不存在！")
-        end
+    local function getCharacterParts()
+        local character = waitForObject(function() return localPlayer.Character end, 20)
+        if not character then return nil end
+        local humanoidRootPart = waitForObject(function() return character:FindFirstChild("HumanoidRootPart") end, 20)
+        return humanoidRootPart
     end
 
-    spawn(function()
-        while wait(1) do
-            if not isTargetPlace() then continue
-            end
-local existingExit = Workspace.MissionObjects and Workspace.MissionObjects:FindFirstChild("WaveExit")
-if existingExit then
-teleportToWaveExit()
+    local function executeTeleportSequence()
+        local humanoidRootPart = getCharacterParts()
+        if not humanoidRootPart then return false end
+
+        if not waveExit or not waveExit.Parent then return false end
+        humanoidRootPart.CFrame = waveExit.CFrame
+        task.wait(1)
+
+        local nextFloorTeleporter = missionObjects:FindFirstChild("NextFloorTeleporter")
+if nextFloorTeleporter and nextFloorTeleporter.Parent then
+humanoidRootPart.CFrame = nextFloorTeleporter.CFrame
 end
+task.wait(0.5)
+ 
+local waveStarter = missionObjects:FindFirstChild("WaveStarter")
+if waveStarter and waveStarter.Parent then
+humanoidRootPart.CFrame = waveStarter.CFrame
+end
+return true
+end
+ 
+-- 修复：将startTeleportLoop函数移出executeTeleportSequence，解决嵌套未闭合问题
+local function startTeleportLoop()
+missionObjects = waitForObject(function() return Workspace:FindFirstChild("MissionObjects") end, 30)
+if not missionObjects then return end
+ 
+missionObjects.ChildAdded:Connect(function(child)
+if child.Name == "WaveExit" then
+waveExit = child
+isTeleportLoopRunning = true
+task.spawn(function()
+while isTeleportLoopRunning and waveExit and waveExit.Parent do
+local loopContinue = executeTeleportSequence()
+if not loopContinue then break end
+task.wait(0.5)
+end
+isTeleportLoopRunning = false
+end)
 end
 end)
  
+missionObjects.ChildRemoved:Connect(function(child)
+if child.Name == "WaveExit" then
+waveExit = nil
+isTeleportLoopRunning = false
+end
+end)
+end
+startTeleportLoop()
+ 
 spawn(function()
-while true do
+while wait(generalInterval) do
 pcall(function()
 local currentTime = tick()
 local player = localPlayer
-if not player then
-task.wait(generalInterval)
-return
-end
+if not player then return end
  
 local character = player.Character
 local humanoidRootPart = character and character:FindFirstChild("HumanoidRootPart")
-if not humanoidRootPart then
-task.wait(generalInterval)
-return
-end
+if not humanoidRootPart then return end
 local targetCFrame = humanoidRootPart.CFrame
  
-local missionObjects = Workspace:FindFirstChild("MissionObjects")
 if missionObjects then
 local missionStart = missionObjects:FindFirstChild("MissionStart")
 if missionStart then
@@ -528,12 +553,10 @@ end
 end
 end
 end
+end
 lastWaveSyncTime = currentTime
-end
 end)
-task.wait(generalInterval)
 end
-task.wait(0.1)
 end)
 end
  
@@ -1227,5 +1250,6 @@ end)
 end
 initWaveExitOriginalPos()
 localPlayer.CharacterAdded:Connect(initWaveExitOriginalPos)
+ 
 
-            
+
