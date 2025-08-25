@@ -319,14 +319,14 @@ pcall(function()
         end
 
         local skills = {
-            {"MageOfShadows", 0.7},
-            {"MageOfShadowsBlast", 0.7},
-            {"MageOfShadowsCharged", 0.7},
-            {"MageOfShadowsBlastCharged", 0.7},
-            {"BighShadowOrb1", 0.7},
-            {"BighShadowOrb2", 0.7},
-            {"BighShadowOrb3", 0.7},
-            {"MageOfShadowsDamageCircle", 0.7},
+            {"MageOfShadows", 0.6},
+            {"MageOfShadowsBlast", 0.6},
+            {"MageOfShadowsCharged", 0.6},
+            {"MageOfShadowsBlastCharged", 0.6},
+            {"BighShadowOrb1", 0.6},
+            {"BighShadowOrb2", 0.6},
+            {"BighShadowOrb3", 0.6},
+            {"MageOfShadowsDamageCircle", 0.6},
             {"Ultimate", 3}
         }
         for _, skillData in ipairs(skills) do
@@ -880,9 +880,9 @@ end
 end
  
 shadowChainsRemote:FireServer(unpack(chainArgs))
-task.wait(3)
+task.wait(5)
 end)
-task.wait(0.2)
+task.wait(1)
 end
 end
  
@@ -1251,5 +1251,3 @@ end
 initWaveExitOriginalPos()
 localPlayer.CharacterAdded:Connect(initWaveExitOriginalPos)
  
-
-
