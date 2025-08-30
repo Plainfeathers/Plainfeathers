@@ -311,7 +311,7 @@ pcall(function()
                         continue 
                     end
                     pcall(function()
-                        attackEvent:FireServer(skillName, getNearestTargetPos(), nil, 66)
+                        attackEvent:FireServer(skillName, getNearestTargetPos(), nil, 67)
                     end)
                     task.wait(interval)
                 end
